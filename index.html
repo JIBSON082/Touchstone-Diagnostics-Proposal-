@@ -1,1 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A Website Proposal for Your Healthcare Business – David Ajibua</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/TextPlugin.min.js"></script>
 
+  <style>
+    :root {
+      --gold: #c9a84c;
+      --gold-light: #e8c97a;
+      --teal: #2dd4bf;
+      --bg: #080c10;
+      --bg2: #0d1219;
+      --bg3: #111820;
+      --text: #e8e4dc;
+      --muted: #7a8694;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      cursor: none;
+      overflow-x: hidden;
+    }
+
+    /* ─── CURSOR ─── */
+    #cursor {
+      width: 10px; height: 10px;
+      background: var(--gold);
+      border-radius: 50%;
+      position: fixed; top: 0; left: 0;
+      pointer-events: none; z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: width .15s, height .15s, background .15s;
+    }
+    #cursor-ring {
+      width: 36px; height: 36px;
+      border: 1px solid rgba(201,168,76,.45);
+      border-radius: 50%;
+      position: fixed; top: 0; left: 0;
+      pointer-events: none; z-index: 9998;
+      transform: translate(-50%, -50%);
+      transition: width .2s, height .2s, border-color .2s;
+    }
+    body:hover #cursor { opacity: 1; }
+    a:hover ~ #cursor, button:hover ~ #cursor { width: 18px; height: 18px; }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 2px; }
+
+    /* ─── NOISE OVERLAY ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0; opacity: .5;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      padding: 1.5rem 2.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+      background: linear-gradient(to bottom, rgba(8,12,16,.95), transparent);
+      backdrop-filter: blur(0px);
+      transition: backdrop-filter .3s, background .3s;
+    }
+    nav.scrolled {
+      background: rgba(8,12,16,.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(201,168,76,.12);
+    }
+    .nav-logo {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.1rem; letter-spacing: .12em;
+      color: var(--gold); text-transform: uppercase;
+    }
+    .nav-cta {
+      font-family: 'Space Mono', monospace;
+      font-size: .72rem; letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: .55rem 1.4rem;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      background: transparent;
+      cursor: none;
+      transition: background .25s, color .25s;
+    }
+    .nav-cta:hover { background: var(--gold); color: var(--bg); }
+
+    /* ─── HERO ─── */
+    #hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      text-align: center;
+      position: relative;
+      padding: 0 1.5rem;
+      overflow: hidden;
+    }
+
+    /* Grid lines */
+    #hero::after {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(201,168,76,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,168,76,.04) 1px, transparent 1px);
+      background-size: 72px 72px;
+      pointer-events: none;
+    }
+
+    .hero-tag {
+      font-family: 'Space Mono', monospace;
+      font-size: .72rem; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--teal);
+      border: 1px solid rgba(45,212,191,.3);
+      display: inline-block; padding: .4rem 1.2rem;
+      margin-bottom: 2rem;
+    }
+
+    .hero-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(3rem, 8vw, 7.5rem);
+      font-weight: 300; line-height: 1.05;
+      color: var(--text);
+    }
+    .hero-title em {
+      font-style: italic; color: var(--gold);
+    }
+
+    .hero-sub {
+      font-family: 'DM Sans', sans-serif;
+      font-size: clamp(.95rem, 1.8vw, 1.15rem);
+      color: var(--muted); font-weight: 300;
+      max-width: 560px; margin: 1.8rem auto 0;
+      line-height: 1.75;
+    }
+
+    .hero-cta-row {
+      display: flex; gap: 1.2rem; justify-content: center;
+      flex-wrap: wrap; margin-top: 3rem;
+    }
+
+    .btn-primary {
+      font-family: 'Space Mono', monospace;
+      font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
+      padding: .9rem 2.4rem;
+      background: var(--gold); color: var(--bg);
+      border: none; cursor: none;
+      transition: background .25s, transform .2s;
+    }
+    .btn-primary:hover { background: var(--gold-light); transform: translateY(-2px); }
+
+    .btn-ghost {
+      font-family: 'Space Mono', monospace;
+      font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
+      padding: .9rem 2.4rem;
+      background: transparent; color: var(--text);
+      border: 1px solid rgba(232,228,220,.22);
+      cursor: none;
+      transition: border-color .25s, color .25s, transform .2s;
+    }
+    .btn-ghost:hover { border-color: var(--text); transform: translateY(-2px); }
+
+    /* Scroll line */
+    .scroll-line {
+      position: absolute; bottom: 2.5rem; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: .5rem;
+    }
+    .scroll-line span {
+      font-family: 'Space Mono', monospace;
+      font-size: .6rem; letter-spacing: .2em; text-transform: uppercase; color: var(--muted);
+    }
+    .scroll-line-bar {
+      width: 1px; height: 56px;
+      background: linear-gradient(to bottom, var(--gold), transparent);
+      animation: scrollLine 2s ease-in-out infinite;
+    }
+    @keyframes scrollLine {
+      0%,100% { transform: scaleY(1); opacity: 1; }
+      50% { transform: scaleY(.4); opacity: .4; }
+    }
+
+    /* ─── SECTION COMMON ─── */
+    section { position: relative; z-index: 1; }
+
+    .section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: .68rem; letter-spacing: .22em; text-transform: uppercase;
+      color: var(--teal); margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 300; line-height: 1.15;
+    }
+    .section-title em { font-style: italic; color: var(--gold); }
+
+    .section-body {
+      font-size: 1rem; color: var(--muted); line-height: 1.8; font-weight: 300;
+    }
+
+    /* divider */
+    .gold-line {
+      width: 56px; height: 1px; background: var(--gold); margin: 1.8rem 0;
+    }
+
+    /* ─── INTRO ─── */
+    #intro {
+      padding: 8rem 1.5rem;
+      background: var(--bg2);
+    }
+    .intro-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6rem; align-items: center;
+    }
+    @media (max-width: 768px) { .intro-inner { grid-template-columns: 1fr; gap: 3rem; } }
+
+    .intro-stat-block {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
+    }
+    .stat-card {
+      background: var(--bg3);
+      border: 1px solid rgba(201,168,76,.1);
+      padding: 1.8rem 1.4rem;
+      transition: border-color .3s;
+    }
+    .stat-card:hover { border-color: rgba(201,168,76,.4); }
+    .stat-num {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 3rem; font-weight: 300; color: var(--gold); line-height: 1;
+    }
+    .stat-desc {
+      font-size: .82rem; color: var(--muted); margin-top: .5rem; line-height: 1.5;
+    }
+
+    /* ─── PROBLEM ─── */
+    #problem {
+      padding: 8rem 1.5rem;
+      background: var(--bg);
+    }
+    .problem-inner { max-width: 900px; margin: 0 auto; text-align: center; }
+
+    .problem-cards {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem; margin-top: 3.5rem; text-align: left;
+    }
+    .problem-card {
+      background: var(--bg2);
+      border: 1px solid rgba(255,255,255,.07);
+      padding: 2rem 1.6rem;
+      position: relative; overflow: hidden;
+      transition: border-color .3s, transform .3s;
+    }
+    .problem-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 2px;
+      background: linear-gradient(to right, transparent, rgba(201,168,76,.4), transparent);
+      transform: translateX(-100%);
+      transition: transform .6s;
+    }
+    .problem-card:hover::before { transform: translateX(0); }
+    .problem-card:hover { border-color: rgba(201,168,76,.25); transform: translateY(-4px); }
+    .problem-icon { font-size: 1.6rem; margin-bottom: 1rem; }
+    .problem-title { font-family: 'Cormorant Garamond', serif; font-size: 1.25rem; color: var(--text); margin-bottom: .5rem; }
+    .problem-text { font-size: .88rem; color: var(--muted); line-height: 1.7; }
+
+    /* ─── BENEFITS ─── */
+    #benefits {
+      padding: 8rem 1.5rem;
+      background: var(--bg2);
+    }
+    .benefits-inner { max-width: 1100px; margin: 0 auto; }
+    .benefits-header { margin-bottom: 4rem; }
+
+    .benefit-item {
+      display: grid; grid-template-columns: 72px 1fr;
+      gap: 2rem; align-items: start;
+      padding: 2.5rem 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      transition: padding-left .3s;
+    }
+    .benefit-item:hover { padding-left: .5rem; }
+    .benefit-item:last-child { border-bottom: none; }
+
+    .benefit-num {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 3.5rem; font-weight: 300;
+      color: rgba(201,168,76,.2);
+      line-height: 1; transition: color .3s;
+    }
+    .benefit-item:hover .benefit-num { color: var(--gold); }
+    .benefit-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.5rem; color: var(--text); margin-bottom: .5rem;
+    }
+    .benefit-text { font-size: .9rem; color: var(--muted); line-height: 1.75; font-weight: 300; }
+
+    /* ─── DEMO ─── */
+    #demo {
+      padding: 8rem 1.5rem;
+      background: var(--bg);
+    }
+    .demo-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1.4fr; gap: 5rem; align-items: center;
+    }
+    @media (max-width: 900px) { .demo-inner { grid-template-columns: 1fr; gap: 3rem; } }
+
+    .demo-browser {
+      background: var(--bg3);
+      border: 1px solid rgba(201,168,76,.15);
+      border-radius: 8px; overflow: hidden;
+      box-shadow: 0 40px 100px rgba(0,0,0,.6);
+      transition: transform .4s, box-shadow .4s;
+    }
+    .demo-browser:hover {
+      transform: translateY(-6px) scale(1.01);
+      box-shadow: 0 60px 120px rgba(0,0,0,.7), 0 0 40px rgba(201,168,76,.08);
+    }
+    .browser-bar {
+      background: #1a2030;
+      padding: .7rem 1rem;
+      display: flex; align-items: center; gap: .6rem;
+      border-bottom: 1px solid rgba(201,168,76,.1);
+    }
+    .browser-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .browser-url {
+      background: #0d1219;
+      margin-left: .8rem; flex: 1;
+      padding: .3rem .8rem;
+      font-family: 'Space Mono', monospace;
+      font-size: .65rem; color: var(--muted);
+      border-radius: 4px;
+    }
+    .browser-preview {
+      width: 100%; aspect-ratio: 16/10;
+      object-fit: cover; display: block;
+    }
+    .demo-iframe-wrap {
+      width: 100%; aspect-ratio: 16/10; overflow: hidden;
+    }
+    .demo-iframe-wrap iframe {
+      width: 200%; height: 200%;
+      transform: scale(.5); transform-origin: top left;
+      border: none; pointer-events: none;
+    }
+
+    /* ─── WHAT YOU GET ─── */
+    #deliverables {
+      padding: 8rem 1.5rem;
+      background: var(--bg2);
+    }
+    .deliverables-inner { max-width: 1100px; margin: 0 auto; }
+
+    .deliverables-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem; margin-top: 3.5rem;
+    }
+    .del-card {
+      background: var(--bg);
+      border: 1px solid rgba(201,168,76,.08);
+      padding: 2rem 1.5rem;
+      transition: border-color .3s, background .3s;
+      position: relative; overflow: hidden;
+    }
+    .del-card::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0;
+      width: 0%; height: 2px; background: var(--gold);
+      transition: width .4s;
+    }
+    .del-card:hover::after { width: 100%; }
+    .del-card:hover { border-color: rgba(201,168,76,.3); background: var(--bg3); }
+    .del-icon { font-size: 1.8rem; margin-bottom: 1rem; }
+    .del-title { font-family: 'Cormorant Garamond', serif; font-size: 1.1rem; color: var(--text); margin-bottom: .4rem; }
+    .del-text { font-size: .82rem; color: var(--muted); line-height: 1.6; }
+
+    /* ─── CTA ─── */
+    #cta {
+      padding: 10rem 1.5rem;
+      background: var(--bg);
+      text-align: center;
+      position: relative; overflow: hidden;
+    }
+    #cta::before {
+      content: '';
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 700px; height: 700px;
+      background: radial-gradient(circle, rgba(201,168,76,.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cta-inner { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
+
+    .cta-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(2.8rem, 6vw, 5.5rem);
+      font-weight: 300; line-height: 1.1;
+    }
+    .cta-title em { font-style: italic; color: var(--gold); }
+
+    .cta-sub { font-size: 1rem; color: var(--muted); margin: 1.5rem auto 2.5rem; max-width: 480px; line-height: 1.75; }
+
+    .cta-contact-row {
+      display: flex; gap: 1.5rem; justify-content: center;
+      flex-wrap: wrap; margin-top: 3rem;
+    }
+    .contact-chip {
+      font-family: 'Space Mono', monospace;
+      font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+      padding: .65rem 1.4rem;
+      border: 1px solid rgba(255,255,255,.15);
+      color: var(--muted);
+      display: inline-flex; align-items: center; gap: .5rem;
+      transition: border-color .25s, color .25s;
+    }
+    .contact-chip:hover { border-color: var(--gold); color: var(--gold); }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background: var(--bg2);
+      border-top: 1px solid rgba(201,168,76,.1);
+      padding: 2.5rem 2rem;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+    }
+    .footer-name {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1rem; letter-spacing: .1em; color: var(--gold);
+    }
+    .footer-note {
+      font-family: 'Space Mono', monospace;
+      font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ─── INVISIBLE TRIGGER ELEMENTS ─── */
+    .reveal { opacity: 0; }
+
+    /* ─── MOBILE ─── */
+    @media (max-width: 640px) {
+      .benefit-item { grid-template-columns: 50px 1fr; gap: 1rem; }
+      .benefit-num { font-size: 2.5rem; }
+      nav { padding: 1.2rem 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- CURSOR -->
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<!-- NAV -->
+<nav id="navbar">
+  <div class="nav-logo">David Ajibua · Dev</div>
+  <a href="#cta" class="nav-cta">Let's Talk</a>
+</nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section id="hero">
+  <div style="position:relative;z-index:1;width:100%;">
+
+    <div class="hero-tag reveal" id="hero-tag">
+      A Personal Proposal · Healthcare Edition
+    </div>
+
+    <h1 class="hero-title">
+      <span id="hero-line1" class="reveal" style="display:block">Your Patients Are</span>
+      <span id="hero-line2" class="reveal" style="display:block"><em>Searching Online.</em></span>
+      <span id="hero-line3" class="reveal" style="display:block">Are They Finding You?</span>
+    </h1>
+
+    <p class="hero-sub reveal" id="hero-sub">
+      A personal proposal from David Ajibua — web developer, Lagos —<br/>
+      crafted specifically for healthcare businesses ready to grow online.
+    </p>
+
+    <div class="hero-cta-row reveal" id="hero-btns">
+      <a href="#benefits" class="btn-primary">See What's Possible</a>
+      <a href="https://touchstone-diagnostics.vercel.app" target="_blank" class="btn-ghost">View Live Demo ↗</a>
+    </div>
+
+  </div>
+
+  <div class="scroll-line">
+    <span>Scroll</span>
+    <div class="scroll-line-bar"></div>
+  </div>
+</section>
+
+<!-- ═══════════════ INTRO ═══════════════ -->
+<section id="intro">
+  <div class="intro-inner">
+
+    <div>
+      <p class="section-label reveal">The Introduction</p>
+      <h2 class="section-title reveal">Hello,<br/><em>I'm David.</em></h2>
+      <div class="gold-line reveal"></div>
+      <p class="section-body reveal" style="margin-bottom:1.2rem">
+        My name is <strong style="color:var(--text)">David Ajibua</strong>, a web developer based in Lagos specialising in building professional, high-performance websites for healthcare businesses.
+      </p>
+      <p class="section-body reveal">
+        I recently completed a full website for <strong style="color:var(--gold)">Touchstone Diagnostics</strong> in Surulere — a modern diagnostic centre — and I'd love to build something equally remarkable for your practice.
+      </p>
+      <div class="hero-cta-row reveal" style="justify-content:flex-start;margin-top:2rem">
+        <a href="https://touchstone-diagnostics.vercel.app" target="_blank" class="btn-ghost" style="font-size:.68rem">
+          touchstone-diagnostics.vercel.app ↗
+        </a>
+      </div>
+    </div>
+
+    <div class="intro-stat-block reveal">
+      <div class="stat-card">
+        <div class="stat-num">77%</div>
+        <div class="stat-desc">of patients search online before choosing a healthcare provider</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">24/7</div>
+        <div class="stat-desc">your website captures patient inquiries even when you're closed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">3×</div>
+        <div class="stat-desc">more trust from patients when a business has a professional website</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">∞</div>
+        <div class="stat-desc">growth potential when your services are visible to the right audience</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════ PROBLEM ═══════════════ -->
+<section id="problem">
+  <div class="problem-inner">
+    <p class="section-label reveal">The Situation</p>
+    <h2 class="section-title reveal">
+      You Have a Great Business.<br/><em>The Internet Doesn't Know It Yet.</em>
+    </h2>
+    <div class="gold-line reveal" style="margin:1.8rem auto"></div>
+    <p class="section-body reveal" style="max-width:620px;margin:0 auto">
+      Many exceptional healthcare providers in Lagos are losing patients daily — not because of poor service, but simply because they are invisible online. Your competitors who have websites are quietly filling their appointment books while you rely solely on word-of-mouth.
+    </p>
+  </div>
+
+  <div class="problem-cards" style="max-width:1100px;margin:3.5rem auto 0;padding:0 1.5rem">
+    <div class="problem-card reveal">
+      <div class

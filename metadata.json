@@ -1,1 +1,19 @@
 
+{
+  "title": "Touchstone Diagnostics Web Proposal",
+  "version": "1.0.0",
+  "description": "Professional web development proposal prepared for Touchstone Diagnostics",
+  "author": {
+    "name": "David Ajibua",
+    "role": "Web Developer",
+    "phone": "07068634125",
+    "email": "davidajibua78@gmail.com"
+  },
+  "client": {
+    "name": "Touchstone Diagnostics",
+    "location": "66 Ogunlana Drive, Surulere, Lagos",
+    "phone": "0901 888 8143"
+  },
+  "demoUrl": "https://touchstone-diagnostics.vercel.app",
+  "date": "March 2026"
+}

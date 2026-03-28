@@ -1,4 +1,22 @@
-import React from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+
+/* ── Error Boundary ── */
+class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean, error: Error | null}> {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("App Error:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-red-600 bg-red-50 min-h-screen font-sans">
+          <h1 className="text-2xl font-bold mb-4">Application Error</h1>
+          <pre className="whitespace-pre-wrap font-mono text-sm">{this.state.error?.toString()}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* ── Icons ── */
 const HB = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>;
@@ -22,13 +40,13 @@ const ChkI = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" s
 /* ── Shared ── */
 function Logo() {
   return (
-    <div className="logo">
-      <div className="logo-icon">
+    <div className="flex items-center gap-3 mb-16">
+      <div className="text-blue-700">
         <HB />
       </div>
-      <div className="logo-text">
-        <span className="logo-brand">TOUCHSTONE</span>
-        <span className="logo-sub">DIAGNOSTICS</span>
+      <div className="flex flex-col">
+        <span className="font-bold text-xl tracking-wider text-slate-900">TOUCHSTONE</span>
+        <span className="text-xs text-blue-700 font-bold tracking-[0.2em]">DIAGNOSTICS</span>
       </div>
     </div>
   );
@@ -36,22 +54,22 @@ function Logo() {
 
 function Heading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="section-heading">
-      <h2 className="section-title">{title}</h2>
-      {subtitle && <p className="section-subtitle">{subtitle}</p>}
-      <div className="section-bar"></div>
+    <div className="mb-12">
+      <h2 className="text-4xl font-bold text-slate-900 mb-3">{title}</h2>
+      {subtitle && <p className="text-xl text-slate-500">{subtitle}</p>}
+      <div className="w-16 h-1.5 bg-blue-600 mt-6 rounded-full"></div>
     </div>
   );
 }
 
 function Footer({ page }: { page: number }) {
   return (
-    <div className="page-footer">
-      <div className="footer-left">
-        <span className="footer-company">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span className="footer-contact">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+    <div className="absolute bottom-12 left-12 right-12 flex justify-between items-end text-sm text-slate-400 border-t border-slate-100 pt-6">
+      <div className="flex flex-col gap-1">
+        <span className="font-medium text-slate-500">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span>0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
-      <span className="footer-page">Page {page}</span>
+      <span className="font-bold">Page {page}</span>
     </div>
   );
 }
@@ -59,43 +77,43 @@ function Footer({ page }: { page: number }) {
 /* ── Page 1: Cover ── */
 function P1() {
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Logo />
-      <div className="cover-body">
-        <h1 className="cover-title">
+      <div className="flex-grow flex flex-col justify-center">
+        <h1 className="text-6xl font-extrabold text-slate-900 leading-tight mb-6">
           Professional<br />
-          Diagnostic <span className="cover-accent">Web Platform</span>
+          Diagnostic <span className="text-blue-600">Web Platform</span>
         </h1>
-        <p className="cover-tagline">
+        <p className="text-2xl text-slate-500 max-w-2xl leading-relaxed">
           Your Patients Are Searching Online. Let's Make Sure They Find You.
         </p>
       </div>
-      <div className="cover-meta-grid">
-        <div className="cover-meta-block">
-          <label>PREPARED FOR</label>
-          <p className="meta-name">Touchstone Diagnostics</p>
-          <p className="meta-detail">66 Ogunlana Drive, Surulere, Lagos</p>
-          <p className="meta-detail">0901 888 8143</p>
+      <div className="grid grid-cols-2 gap-12 mt-24 mb-12">
+        <div>
+          <label className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 block">PREPARED FOR</label>
+          <p className="font-bold text-lg text-slate-900 mb-1">Touchstone Diagnostics</p>
+          <p className="text-slate-600 mb-1">66 Ogunlana Drive, Surulere, Lagos</p>
+          <p className="text-slate-600 mb-1">0901 888 8143</p>
         </div>
-        <div className="cover-meta-block">
-          <label>PREPARED BY</label>
-          <p className="meta-name">David Ajibua</p>
-          <p className="meta-detail">Web Developer</p>
-          <p className="meta-detail">07068634125</p>
-          <p className="meta-detail">davidajibua78@gmail.com</p>
+        <div>
+          <label className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 block">PREPARED BY</label>
+          <p className="font-bold text-lg text-slate-900 mb-1">David Ajibua</p>
+          <p className="text-slate-600 mb-1">Web Developer</p>
+          <p className="text-slate-600 mb-1">07068634125</p>
+          <p className="text-slate-600 mb-1">davidajibua78@gmail.com</p>
         </div>
       </div>
-      <hr className="cover-divider" />
-      <div className="cover-bottom-grid">
+      <hr className="border-t-2 border-slate-100 my-8" />
+      <div className="grid grid-cols-2 gap-12 mb-24">
         <div>
-          <label>DEMO WEBSITE</label>
-          <a href="https://touchstone-diagnostics.vercel.app" className="cover-link">
+          <label className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 block">DEMO WEBSITE</label>
+          <a href="https://touchstone-diagnostics.vercel.app" className="text-blue-600 font-medium hover:underline">
             touchstone-diagnostics.vercel.app
           </a>
         </div>
-        <div className="cover-date-block">
-          <label>DATE</label>
-          <p className="meta-date">March 2026</p>
+        <div>
+          <label className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 block">DATE</label>
+          <p className="text-slate-900 font-medium">March 2026</p>
         </div>
       </div>
       <Footer page={1} />
@@ -112,25 +130,25 @@ function P2() {
     { icon: <TrendI />, title: 'Competitive Advantage', desc: 'Most diagnostic centers in Lagos lack a strong web presence—this is a window of opportunity to capture patients searching for lab services online.' },
   ];
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Heading title="Executive Summary" />
-      <blockquote className="quote-block">
+      <blockquote className="text-2xl font-medium text-slate-700 italic border-l-4 border-blue-600 pl-6 my-12 leading-relaxed">
         "In today's healthcare landscape, the first impression a diagnostic center makes is no longer at the reception desk—it's on a digital screen."
       </blockquote>
-      <div className="points-list">
+      <div className="grid gap-8 mb-12">
         {pts.map((p, i) => (
-          <div key={i} className="point-item">
-            <div className="point-icon">{p.icon}</div>
-            <div className="point-content">
-              <h4>{p.title}</h4>
-              <p>{p.desc}</p>
+          <div key={i} className="flex gap-6">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">{p.icon}</div>
+            <div>
+              <h4 className="text-xl font-bold text-slate-900 mb-2">{p.title}</h4>
+              <p className="text-slate-600 leading-relaxed">{p.desc}</p>
             </div>
           </div>
         ))}
       </div>
-      <div className="goal-box">
-        <h4>The Goal</h4>
-        <p>
+      <div className="bg-slate-50 p-8 rounded-xl border border-slate-100 mt-auto mb-24">
+        <h4 className="text-lg font-bold text-slate-900 mb-3">The Goal</h4>
+        <p className="text-slate-600 leading-relaxed">
           This proposal presents a fully-built professional website for Touchstone Diagnostics—designed to attract more patients, showcase your complete range of diagnostic services, and establish a trusted digital presence that reflects the clinical excellence your center already delivers.
         </p>
       </div>
@@ -151,43 +169,43 @@ function P3() {
     'Ensure fast performance and smooth experience on all devices',
   ];
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Heading title="The Solution" subtitle="Diagnostic Web Presence Platform" />
-      <div className="live-link-bar">
-        <span className="live-link-icon"><ExtI /></span>
-        <span className="live-label">Live Platform:</span>
-        <a href="https://touchstone-diagnostics.vercel.app" target="_blank" rel="noreferrer">
+      <div className="flex items-center gap-3 bg-blue-50 text-blue-700 p-4 rounded-lg mb-12 font-medium">
+        <span className="shrink-0"><ExtI /></span>
+        <span>Live Platform:</span>
+        <a href="https://touchstone-diagnostics.vercel.app" target="_blank" rel="noreferrer" className="hover:underline">
           https://touchstone-diagnostics.vercel.app
         </a>
       </div>
-      <div className="mock-browser">
-        <div className="mock-bar">
-          <span className="dot dot-red"></span>
-          <span className="dot dot-yellow"></span>
-          <span className="dot dot-green"></span>
-          <span className="mock-url">touchstone-diagnostics.vercel.app</span>
+      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm mb-12">
+        <div className="bg-slate-100 px-4 py-3 flex items-center gap-2 border-b border-slate-200">
+          <span className="w-3 h-3 rounded-full bg-red-400"></span>
+          <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
+          <span className="w-3 h-3 rounded-full bg-green-400"></span>
+          <span className="ml-4 bg-white px-3 py-1 rounded text-xs text-slate-500 font-mono w-64 text-center">touchstone-diagnostics.vercel.app</span>
         </div>
-        <div className="mock-screen">
-          <div className="responsive-badge">
+        <div className="bg-slate-50 h-64 flex flex-col items-center justify-center">
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm text-blue-600 font-bold mb-3">
             <SmphI />
             <span>Fully Responsive</span>
           </div>
-          <p className="mock-sub">Optimized for all devices</p>
+          <p className="text-slate-500 text-sm">Optimized for all devices</p>
         </div>
       </div>
-      <div className="solution-cols">
+      <div className="grid grid-cols-2 gap-12 mb-24">
         <div>
-          <h3 className="col-heading">Key Objectives</h3>
-          <ul className="obj-list">
+          <h3 className="text-xl font-bold text-slate-900 mb-6">Key Objectives</h3>
+          <ul className="flex flex-col gap-4">
             {objs.map((o, i) => (
-              <li key={i}>
-                <span className="obj-check"><ChkI /></span>
+              <li key={i} className="flex items-start gap-3 text-slate-700">
+                <span className="text-green-500 mt-1 shrink-0"><ChkI /></span>
                 {o}
               </li>
             ))}
           </ul>
         </div>
-        <div className="solution-desc">
+        <div className="flex flex-col gap-4 text-slate-600 leading-relaxed">
           <p>A fully functional diagnostic website has been built specifically for Touchstone Diagnostics—tailored to the services, branding, and patient needs of a modern Nigerian diagnostic center.</p>
           <p>The platform serves as a 24/7 digital front desk: answering common questions, showcasing all diagnostic services, and routing interested patients directly to your WhatsApp for immediate booking.</p>
           <p>Hosted on Vercel for lightning-fast performance, the site is fully mobile-optimized to serve the majority of patients browsing on smartphones across Lagos.</p>
@@ -211,14 +229,14 @@ function P4() {
     { icon: <ImgI />, title: 'Facility and Equipment Imagery', description: 'High-quality images showcasing your lab, equipment, and environment—reassuring patients about your facility before they arrive.' },
   ];
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Heading title="Platform Features" />
-      <div className="features-grid">
+      <div className="grid grid-cols-2 gap-x-8 gap-y-12 mb-24">
         {feats.map((f, i) => (
-          <div key={i} className="feature-card">
-            <div className="feature-icon">{f.icon}</div>
-            <h4 className="feature-title">{f.title}</h4>
-            <p className="feature-desc">{f.description}</p>
+          <div key={i} className="flex flex-col">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mb-4">{f.icon}</div>
+            <h4 className="text-lg font-bold text-slate-900 mb-2">{f.title}</h4>
+            <p className="text-slate-600 leading-relaxed">{f.description}</p>
           </div>
         ))}
       </div>
@@ -238,20 +256,20 @@ function P5() {
     { icon: <ShldI />, title: 'Stand Out from Competitors', description: 'Most diagnostic centers lack a quality web presence—this positions Touchstone as the clear digital leader in the area.' },
   ];
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Heading title="Benefits to Touchstone Diagnostics" />
-      <div className="benefits-grid">
+      <div className="grid grid-cols-1 gap-8 mb-12">
         {bens.map((b, i) => (
-          <div key={i} className="benefit-card">
-            <div className="benefit-icon">{b.icon}</div>
+          <div key={i} className="flex items-start gap-6 p-6 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="w-12 h-12 rounded-full bg-white shadow-sm text-blue-600 flex items-center justify-center shrink-0">{b.icon}</div>
             <div>
-              <h4 className="benefit-title">{b.title}</h4>
-              <p className="benefit-desc">{b.description}</p>
+              <h4 className="text-xl font-bold text-slate-900 mb-2">{b.title}</h4>
+              <p className="text-slate-600">{b.description}</p>
             </div>
           </div>
         ))}
       </div>
-      <blockquote className="quote-block quote-bottom">
+      <blockquote className="text-2xl font-medium text-slate-700 italic border-l-4 border-blue-600 pl-6 my-12 leading-relaxed mt-auto mb-24">
         "Digital transformation in healthcare is not an expense—it's a patient acquisition strategy that works 24 hours a day, 7 days a week."
       </blockquote>
       <Footer page={5} />
@@ -264,53 +282,53 @@ function P6() {
   const inc = ['Full Diagnostic Website', 'WhatsApp Booking Integration', 'Google Maps Embed', 'Mobile Optimization', 'All 8 Service Pages', 'Professional UI/UX Design'];
   const mnt = ['Content Updates', 'Uploading New Images', 'Minor Improvements', 'Technical Support', 'Service Page Edits', 'Performance Monitoring'];
   return (
-    <div className="page">
+    <div className="bg-white shadow-xl my-8 p-12 rounded-2xl border border-slate-200 flex flex-col min-h-[1056px] relative">
       <Heading title="Investment" />
-      <div className="investment-card">
-        <div className="inv-header">
+      <div className="border-2 border-blue-600 rounded-2xl p-8 mb-8 relative overflow-hidden">
+        <div className="flex justify-between items-start mb-8">
           <div>
-            <h3 className="inv-title">Website Development</h3>
-            <p className="inv-subtitle">Full digital platform implementation</p>
+            <h3 className="text-2xl font-bold text-slate-900 mb-1">Website Development</h3>
+            <p className="text-slate-500">Full digital platform implementation</p>
           </div>
-          <div className="inv-price">
-            <span className="price-main">$500</span>
-            <span className="price-naira">&#8358;700,000</span>
-            <span className="price-label">ONE-TIME COST</span>
+          <div className="flex flex-col items-end">
+            <span className="text-4xl font-extrabold text-blue-600">$500</span>
+            <span className="text-lg text-slate-500 font-medium">&#8358;700,000</span>
+            <span className="text-xs font-bold text-blue-600 tracking-widest uppercase mt-2 bg-blue-50 px-2 py-1 rounded">ONE-TIME COST</span>
           </div>
         </div>
-        <div className="inv-divider"></div>
-        <ul className="inv-includes">
+        <div className="border-t border-slate-200 mb-8"></div>
+        <ul className="grid grid-cols-2 gap-4">
           {inc.map((item, i) => (
-            <li key={i}>
-              <span className="inv-check"><ChkI /></span>
+            <li key={i} className="flex items-center gap-3 text-slate-700 font-medium">
+              <span className="text-blue-600"><ChkI /></span>
               {item}
             </li>
           ))}
         </ul>
       </div>
-      <div className="maintenance-card">
-        <span className="maint-badge">INCLUDED</span>
-        <h4 className="maint-title">FREE Maintenance for 1 Full Year</h4>
-        <ul className="maint-list">
+      <div className="bg-slate-900 text-white rounded-2xl p-8 relative mb-12">
+        <span className="absolute -top-3 right-8 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full tracking-wider">INCLUDED</span>
+        <h4 className="text-xl font-bold mb-6">FREE Maintenance for 1 Full Year</h4>
+        <ul className="grid grid-cols-2 gap-4 mb-6">
           {mnt.map((item, i) => (
-            <li key={i}>
+            <li key={i} className="flex items-center gap-3 text-slate-300">
               <span>&#8226;</span>
               {item}
             </li>
           ))}
         </ul>
-        <p className="maint-note">After the first year, maintenance can be discussed as needed.</p>
+        <p className="text-sm text-slate-500 border-t border-slate-800 pt-4">After the first year, maintenance can be discussed as needed.</p>
       </div>
-      <div className="dev-block">
-        <div className="dev-left">
-          <label>DEVELOPER</label>
-          <p className="dev-name">David Ajibua</p>
-          <p className="dev-role">Web Developer</p>
+      <div className="flex justify-between items-center bg-slate-50 p-6 rounded-xl border border-slate-100 mt-auto mb-24">
+        <div>
+          <label className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-1 block">DEVELOPER</label>
+          <p className="font-bold text-slate-900">David Ajibua</p>
+          <p className="text-slate-500 text-sm">Web Developer</p>
         </div>
-        <div className="dev-right">
+        <div className="text-right text-sm text-slate-600 flex flex-col gap-1">
           <p>07068634125</p>
           <p>davidajibua78@gmail.com</p>
-          <a href="https://touchstone-diagnostics.vercel.app">touchstone-diagnostics.vercel.app</a>
+          <a href="https://touchstone-diagnostics.vercel.app" className="text-blue-600 hover:underline">touchstone-diagnostics.vercel.app</a>
         </div>
       </div>
       <Footer page={6} />
@@ -321,13 +339,15 @@ function P6() {
 /* ── Root ── */
 export default function App() {
   return (
-    <div className="document">
-      <P1 />
-      <P2 />
-      <P3 />
-      <P4 />
-      <P5 />
-      <P6 />
-    </div>
+    <ErrorBoundary>
+      <div className="max-w-4xl mx-auto bg-slate-50 min-h-screen font-sans text-slate-800 p-4 sm:p-8">
+        <P1 />
+        <P2 />
+        <P3 />
+        <P4 />
+        <P5 />
+        <P6 />
+      </div>
+    </ErrorBoundary>
   );
 }

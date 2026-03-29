@@ -1,297 +1,12 @@
-<html lang="en"><head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js" integrity="sha512-iZ2ORl595Wx6miw+GuadDet4WQbdSWS3JLMoNfY8cRGoEFy6oT3G9IbcrBeL6AfkgpA51ETt/faX6yLV+/gFJg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script>
-      (function() {
-        const originalConsole = window.console;
-        window.console = {
-          log: (...args) => {
-            originalConsole.log(...args);
-            window.parent.postMessage({ type: 'console', message: args.join(' ') }, '*');
-          },
-          error: (...args) => {
-            originalConsole.error(...args);
-            window.parent.postMessage({ type: 'console', message: 'Error: ' + args.join(' ') }, '*');
-          },
-          warn: (...args) => {
-            originalConsole.warn(...args);
-            window.parent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' ') }, '*');
-          }
-        };
-
-        let requestId = 0;
-        let callbacksMap = new Map();
-        let streamControllers = new Map();
-        
-        window.claude = {
-          complete: (prompt) => {
-            return new Promise((resolve, reject) => {
-              const id = requestId++;
-              callbacksMap.set(id, { resolve, reject });
-              window.parent.postMessage({ type: 'claudeComplete', id, prompt }, '*');
-            });
-          }
-        };
-
-        window.storage = {
-          get: (key, shared = false) => {
-            return new Promise((resolve, reject) => {
-              const id = requestId++;
-              callbacksMap.set(id, { resolve, reject });
-              window.parent.postMessage({ type: 'storageGet', id, key, shared }, '*');
-            });
-          },
-          set: (key, value, shared = false) => {
-            return new Promise((resolve, reject) => {
-              const id = requestId++;
-              callbacksMap.set(id, { resolve, reject });
-              window.parent.postMessage({ type: 'storageSet', id, key, value, shared }, '*');
-            });
-          },
-          delete: (key, shared = false) => {
-            return new Promise((resolve, reject) => {
-              const id = requestId++;
-              callbacksMap.set(id, { resolve, reject });
-              window.parent.postMessage({ type: 'storageDelete', id, key, shared }, '*');
-            });
-          },
-          list: (prefix, shared = false) => {
-            return new Promise((resolve, reject) => {
-              const id = requestId++;
-              callbacksMap.set(id, { resolve, reject });
-              window.parent.postMessage({ type: 'storageList', id, prefix, shared }, '*');
-            });
-          }
-        };
-
-        let pendingBlobs = new Map();
-        URL.createObjectURL = (blob) => {
-          // Store the blob and create an ID and URL for it
-          const blobId = `blob-${Date.now()}-${Math.random()}`;
-          pendingBlobs.set(blobId, blob);
-          return `blob-request://${blobId}`;
-        };
-
-        URL.revokeObjectURL = (url) => {
-          // Remove the blob from our store
-          const blobId = url.replace("blob-request://", "");
-          pendingBlobs.delete(blobId);
-        };
-
-        const getBlobFromURL = (url) => {
-          const blobId = url.replace("blob-request://", "");
-          return pendingBlobs.get(blobId);
-        };
-
-        // Override global fetch with streaming support
-        window.fetch = (url, init = {}) => {
-          return new Promise((resolve, reject) => {
-            const id = requestId++;
-            const channelId = `fetch-${id}-${Date.now()}`;
-            
-            callbacksMap.set(id, { 
-              resolve: (response) => {
-                // Create a ReadableStream for the response body
-                const stream = new ReadableStream({
-                  start(controller) {
-                    streamControllers.set(channelId, controller);
-                  },
-                  cancel() {
-                    streamControllers.delete(channelId);
-                  }
-                });
-                
-                // Create and return the Response with the stream
-                resolve(new Response(stream, {
-                  status: response.status,
-                  statusText: response.statusText,
-                  headers: response.headers
-                }));
-              },
-              reject,
-              channelId
-            });
-            
-            window.parent.postMessage({
-              type: 'proxyFetch',
-              id,
-              url,
-              init,
-              channelId
-            }, '*');
-          });
-        };
-
-        window.addEventListener('message', async (event) => {
-          if (event.data.type === 'takeScreenshot') {
-            const rootElement = document.getElementById('artifacts-component-root-html');
-            if (!rootElement) {
-              window.parent.postMessage({
-                type: 'screenshotError',
-                error: new Error('Root element not found'),
-              }, '*');
-            }
-            const screenshot = await htmlToImage.toPng(rootElement, {
-              imagePlaceholder:
-                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjePDgwX8ACOQDoNsk0PMAAAAASUVORK5CYII=",
-            });
-            window.parent.postMessage({
-              type: 'screenshotData',
-              data: screenshot,
-            }, '*');
-          } else if (event.data.type === 'claudeComplete') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-            } else {
-              callback.resolve(event.data.completion);
-            }
-            callbacksMap.delete(event.data.id);
-          } else if (event.data.type === 'proxyFetchResponse') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-              callbacksMap.delete(event.data.id);
-            } else {
-              // Initial response with headers, status, etc.
-              callback.resolve({
-                status: event.data.status,
-                statusText: event.data.statusText,
-                headers: event.data.headers
-              });
-              // Don't delete the callback yet if streaming
-              if (!event.data.body) {
-                callbacksMap.delete(event.data.id);
-              }
-            }
-          } else if (event.data.type === 'proxyFetchStream') {
-            // Handle streaming data chunks
-            const controller = streamControllers.get(event.data.channelId);
-            if (controller) {
-              if (event.data.error) {
-                controller.error(new Error(event.data.error));
-                streamControllers.delete(event.data.channelId);
-              } else if (event.data.done) {
-                controller.close();
-                streamControllers.delete(event.data.channelId);
-                // Clean up the callback
-                const callback = Array.from(callbacksMap.entries()).find(
-                  ([_, value]) => value.channelId === event.data.channelId
-                );
-                if (callback) {
-                  callbacksMap.delete(callback[0]);
-                }
-              } else if (event.data.chunk) {
-                controller.enqueue(new Uint8Array(event.data.chunk));
-              }
-            }
-          } else if (event.data.type === 'storageGet') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-            } else {
-              callback.resolve(event.data.result);
-            }
-            callbacksMap.delete(event.data.id);
-          } else if (event.data.type === 'storageSet') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-            } else {
-              callback.resolve(event.data.result);
-            }
-            callbacksMap.delete(event.data.id);
-          } else if (event.data.type === 'storageDelete') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-            } else {
-              callback.resolve(event.data.result);
-            }
-            callbacksMap.delete(event.data.id);
-          } else if (event.data.type === 'storageList') {
-            const callback = callbacksMap.get(event.data.id);
-            if (event.data.error) {
-              callback.reject(new Error(event.data.error));
-            } else {
-              callback.resolve(event.data.result);
-            }
-            callbacksMap.delete(event.data.id);
-          }
-        });
-
-        window.addEventListener('click', (event) => {
-          const isEl = event.target instanceof HTMLElement;
-          if (!isEl) return;
-    
-          // find ancestor links
-          const linkEl = event.target.closest("a");
-          if (!linkEl || !linkEl.href) return;
-    
-          event.preventDefault();
-          event.stopImmediatePropagation();
-    
-          if (linkEl.href.startsWith("blob-request:")) {
-            const blob = getBlobFromURL(linkEl.href);
-            if (!blob) return;
-            void blob.arrayBuffer().then((data) => {
-              window.parent.postMessage({
-                type: "downloadFile",
-                filename: linkEl.download,
-                data,
-                mimeType: blob.type || "application/octet-stream",
-              });
-            });
-          } else if (linkEl.href.startsWith("data:")) {
-            const [header, base64Data] = linkEl.href.split(",");
-            const mimeMatch = header.match(/data:([^;]+)/);
-            const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-            const binaryString = atob(base64Data);
-            const data = Uint8Array.from(binaryString, (c) =>
-              c.charCodeAt(0),
-            ).buffer;
-            window.parent.postMessage({
-              type: "downloadFile",
-              filename: linkEl.download,
-              data,
-              mimeType,
-            });
-          } else {
-            let linkUrl;
-            try {
-              linkUrl = new URL(linkEl.href);
-            } catch (error) {
-              return;
-            }
-    
-            if (linkUrl.hostname === window.location.hostname) return;
-      
-            window.parent.postMessage({
-              type: 'openExternal',
-              href: linkEl.href,
-            }, '*');
-          }
-      });
-
-        const originalOpen = window.open;
-        window.open = function (url) {
-          window.parent.postMessage({
-            type: "openExternal",
-            href: url,
-          }, "*");
-        };
-
-        window.addEventListener('error', (event) => {
-          window.parent.postMessage({ type: 'console', message: 'Uncaught Error: ' + event.message }, '*');
-        });
-      })();
-    </script>
-  
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Touchstone Diagnostics — Web Proposal</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&amp;display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -322,31 +37,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ── Copy Button ── */
-  #copy-btn {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 9999;
-    background: var(--deep);
-    color: #fff;
-    border: none;
-    padding: 12px 22px;
-    border-radius: 50px;
-    font-family: var(--fh);
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 20px rgba(12,31,63,.35);
-    transition: background .2s, transform .15s;
-    letter-spacing: .3px;
-  }
-  #copy-btn:hover { background: var(--blue); transform: translateY(-1px); }
-  #copy-btn.copied { background: #1a7a4a; }
-  #copy-btn svg { flex-shrink: 0; }
+
 
   /* ── Document ── */
   .doc {
@@ -489,12 +180,13 @@
   .inv-chk { width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
   /* ── Maintenance ── */
-  .mnt-card { border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-bottom: 40px; }
-  .mnt-badge { display: inline-flex; align-items: center; background: var(--light); color: var(--blue); font-size: 10px; font-family: var(--fh); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 14px; }
-  .mnt-title { font-family: var(--fh); font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 18px; }
-  .mnt-list { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-  .mnt-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--mid); }
-  .mnt-list li span { color: var(--blue); font-size: 18px; line-height: 1; }
+  .mnt-card { border: 2px solid var(--blue); border-radius: 12px; padding: 28px; margin-bottom: 40px; background: var(--light); position: relative; overflow: hidden; }
+  .mnt-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--blue); }
+  .mnt-badge { display: inline-flex; align-items: center; background: var(--blue); color: #fff; font-size: 10px; font-family: var(--fh); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 14px; border-radius: 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(21,101,192,.35); }
+  .mnt-title { font-family: var(--fh); font-size: 18px; font-weight: 800; color: var(--deep); margin-bottom: 18px; }
+  .mnt-list { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .mnt-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--mid); font-weight: 500; }
+  .mnt-list li span { color: var(--blue); font-size: 18px; line-height: 1; font-weight: 700; }
   .mnt-note { font-size: 12px; color: var(--muted); font-style: italic; }
 
   /* ── Dev Block ── */
@@ -519,16 +211,9 @@
   }
 </style>
 </head>
-<body id="artifacts-component-root-html">
+<body>
 
-<!-- ── Copy Button ── -->
-<button id="copy-btn" onclick="copyCode()">
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-  </svg>
-  <span id="btn-label">Copy Code</span>
-</button>
+
 
 <div class="doc">
 
@@ -536,7 +221,7 @@
   <div class="page">
     <div class="logo">
       <div class="logo-box">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       </div>
       <div class="logo-text">
         <span class="logo-brand">TOUCHSTONE</span>
@@ -565,7 +250,7 @@
       </div>
     </div>
 
-    <hr class="cv-div">
+    <hr class="cv-div" />
 
     <div class="cv-bot">
       <div>
@@ -580,8 +265,8 @@
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 1</span>
     </div>
@@ -595,31 +280,31 @@
     </div>
 
     <blockquote class="quote">
-      “In today’s healthcare landscape, the first impression a diagnostic center makes is no longer at the reception desk—it’s on a digital screen.”
+      &#8220;In today&#8217;s healthcare landscape, the first impression a diagnostic center makes is no longer at the reception desk&#8212;it&#8217;s on a digital screen.&#8221;
     </blockquote>
 
     <div class="pts">
       <div class="pt">
         <div class="pt-ico">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         </div>
         <div class="pt-con">
           <h4>Digital-First Patient Discovery</h4>
-          <p>Today’s patients search Google before choosing a diagnostic center. A professional website ensures Touchstone appears when it matters most.</p>
+          <p>Today&#8217;s patients search Google before choosing a diagnostic center. A professional website ensures Touchstone appears when it matters most.</p>
         </div>
       </div>
       <div class="pt">
         <div class="pt-ico">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
         <div class="pt-con">
           <h4>24/7 Online Availability</h4>
-          <p>Your website works around the clock—showcasing services, displaying contact info, and routing patients to WhatsApp even outside business hours.</p>
+          <p>Your website works around the clock&#8212;showcasing services, displaying contact info, and routing patients to WhatsApp even outside business hours.</p>
         </div>
       </div>
       <div class="pt">
         <div class="pt-ico">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
         <div class="pt-con">
           <h4>Credibility &amp; Patient Trust</h4>
@@ -628,24 +313,24 @@
       </div>
       <div class="pt">
         <div class="pt-ico">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
         </div>
         <div class="pt-con">
           <h4>Competitive Advantage</h4>
-          <p>Most diagnostic centers in Lagos lack a strong web presence—this is a window of opportunity to capture patients searching for lab services online.</p>
+          <p>Most diagnostic centers in Lagos lack a strong web presence&#8212;this is a window of opportunity to capture patients searching for lab services online.</p>
         </div>
       </div>
     </div>
 
     <div class="goal">
       <h4>THE GOAL</h4>
-      <p>This proposal presents a fully-built professional website for Touchstone Diagnostics—designed to attract more patients, showcase your complete range of diagnostic services, and establish a trusted digital presence that reflects the clinical excellence your center already delivers. We aren’t just building a website; we’re building a patient acquisition engine.</p>
+      <p>This proposal presents a fully-built professional website for Touchstone Diagnostics&#8212;designed to attract more patients, showcase your complete range of diagnostic services, and establish a trusted digital presence that reflects the clinical excellence your center already delivers. We aren&#8217;t just building a website; we&#8217;re building a patient acquisition engine.</p>
     </div>
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 2</span>
     </div>
@@ -661,7 +346,7 @@
 
     <div class="live">
       <span class="live-ic">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       </span>
       <span class="live-lbl">Live Platform:</span>
       <a href="https://touchstone-diagnostics.vercel.app" target="_blank" rel="noreferrer">https://touchstone-diagnostics.vercel.app</a>
@@ -676,7 +361,7 @@
       </div>
       <div class="mock-screen">
         <div class="rb">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
           <span>Fully Responsive</span>
         </div>
         <p class="mock-sub">Optimized for all devices</p>
@@ -688,37 +373,37 @@
         <h3 class="col-h">Key Objectives</h3>
         <ul class="obj-list">
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Attract patients searching for diagnostic services in Lagos
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Showcase all 8 diagnostic service categories professionally
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Enable instant WhatsApp appointment booking with one tap
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Google Maps integration so patients can locate the center
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Display 24/7 emergency contact prominently on all pages
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Build credibility through a modern, mobile-optimized design
           </li>
           <li>
-            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+            <span class="obj-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
             Fast performance and smooth experience on all devices
           </li>
         </ul>
       </div>
       <div class="sol-desc">
-        <p>A fully functional diagnostic website has been built specifically for Touchstone Diagnostics—tailored to the services, branding, and patient needs of a modern Nigerian diagnostic center.</p>
+        <p>A fully functional diagnostic website has been built specifically for Touchstone Diagnostics&#8212;tailored to the services, branding, and patient needs of a modern Nigerian diagnostic center.</p>
         <p>The platform serves as a 24/7 digital front desk: answering common questions, showcasing all diagnostic services, and routing interested patients directly to WhatsApp for immediate booking.</p>
         <p>Hosted on Vercel for lightning-fast performance, the site is fully mobile-optimized to serve the majority of patients browsing on smartphones across Lagos.</p>
       </div>
@@ -726,8 +411,8 @@
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 3</span>
     </div>
@@ -742,51 +427,51 @@
 
     <div class="feat-grid">
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div>
         <h4 class="feat-title">Professional Diagnostic Website</h4>
-        <p class="feat-desc">A clean, modern website built for diagnostic centers—projecting clinical professionalism and immediately inspiring patient trust.</p>
+        <p class="feat-desc">A clean, modern website built for diagnostic centers&#8212;projecting clinical professionalism and immediately inspiring patient trust.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
         <h4 class="feat-title">Full Services Directory</h4>
         <p class="feat-desc">All 8 service categories displayed: cardiovascular, cancer prevention, diabetes wellness, fertility, imaging, lab medicine, specialized diagnostics and wellness packages.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <h4 class="feat-title">WhatsApp Appointment Booking</h4>
-        <p class="feat-desc">Patients book instantly via a pre-filled WhatsApp message—zero friction for the patient, immediate notification for your team.</p>
+        <p class="feat-desc">Patients book instantly via a pre-filled WhatsApp message&#8212;zero friction for the patient, immediate notification for your team.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
         <h4 class="feat-title">Google Maps Integration</h4>
-        <p class="feat-desc">An interactive map helps patients easily locate your center at 66 Ogunlana Drive, Surulere—reducing first-visit drop-off.</p>
+        <p class="feat-desc">An interactive map helps patients easily locate your center at 66 Ogunlana Drive, Surulere&#8212;reducing first-visit drop-off.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
         <h4 class="feat-title">24/7 Emergency Contact Bar</h4>
         <p class="feat-desc">Your direct emergency number displayed prominently at the top of every page, ensuring patients can always reach you instantly.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
         <h4 class="feat-title">Mobile-First Responsive Design</h4>
-        <p class="feat-desc">Fully optimized experience across all smartphones, tablets, and desktops—reaching patients on every device they use.</p>
+        <p class="feat-desc">Fully optimized experience across all smartphones, tablets, and desktops&#8212;reaching patients on every device they use.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
         <h4 class="feat-title">Modern UI and Brand Identity</h4>
         <p class="feat-desc">A refined design using your navy and blue brand colors that reflects clinical excellence and positions Touchstone as a premium provider.</p>
       </div>
       <div class="feat-card">
-        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+        <div class="feat-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
         <h4 class="feat-title">Facility and Equipment Imagery</h4>
-        <p class="feat-desc">High-quality images showcasing your lab, equipment, and environment—reassuring patients about your facility before they arrive.</p>
+        <p class="feat-desc">High-quality images showcasing your lab, equipment, and environment&#8212;reassuring patients about your facility before they arrive.</p>
       </div>
     </div>
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 4</span>
     </div>
@@ -801,57 +486,57 @@
 
     <div class="ben-grid">
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
         <div>
           <h4 class="ben-title">Attract More Patients</h4>
           <p class="ben-desc">Capture patients actively searching online for diagnostic services in Surulere and across greater Lagos.</p>
         </div>
       </div>
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"></circle><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"></path></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg></div>
         <div>
           <h4 class="ben-title">Build Online Credibility</h4>
           <p class="ben-desc">A professional web presence signals quality care and builds instant trust with new patients before they visit.</p>
         </div>
       </div>
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
         <div>
           <h4 class="ben-title">Streamline Appointment Flow</h4>
           <p class="ben-desc">WhatsApp booking integration reduces manual phone coordination load for your reception staff.</p>
         </div>
       </div>
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         <div>
           <h4 class="ben-title">Always Open, Always Working</h4>
-          <p class="ben-desc">Your website handles patient inquiries around the clock—on weekends, public holidays, and after hours.</p>
+          <p class="ben-desc">Your website handles patient inquiries around the clock&#8212;on weekends, public holidays, and after hours.</p>
         </div>
       </div>
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
         <div>
           <h4 class="ben-title">Easier Patient Navigation</h4>
           <p class="ben-desc">Integrated location map and clear directions reduce friction for first-time patients finding your center.</p>
         </div>
       </div>
       <div class="ben-card">
-        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div>
+        <div class="ben-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
         <div>
           <h4 class="ben-title">Stand Out from Competitors</h4>
-          <p class="ben-desc">Most diagnostic centers lack a quality web presence—this positions Touchstone as the clear digital leader in the area.</p>
+          <p class="ben-desc">Most diagnostic centers lack a quality web presence&#8212;this positions Touchstone as the clear digital leader in the area.</p>
         </div>
       </div>
     </div>
 
     <blockquote class="quote quote-b">
-      “Digital transformation in healthcare is not an expense—it’s a patient acquisition strategy that works 24 hours a day, 7 days a week.”
+      &#8220;Digital transformation in healthcare is not an expense&#8212;it&#8217;s a patient acquisition strategy that works 24 hours a day, 7 days a week.&#8221;
     </blockquote>
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 5</span>
     </div>
@@ -871,19 +556,19 @@
           <p class="inv-st">Full digital platform implementation</p>
         </div>
         <div class="inv-price">
-          <span class="pr-main">$500</span>
-          <span class="pr-ngn">₦700,000</span>
+          <span class="pr-main">$300</span>
+          <span class="pr-ngn">&#8358;400,000</span>
           <span class="pr-lbl">ONE-TIME COST</span>
         </div>
       </div>
       <div class="inv-div"></div>
       <ul class="inv-inc">
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> Full Diagnostic Website</li>
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> WhatsApp Booking Integration</li>
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> Google Maps Embed</li>
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> Mobile Optimization</li>
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> All 8 Service Pages</li>
-        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span> Professional UI/UX Design</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> Full Diagnostic Website</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> WhatsApp Booking Integration</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> Google Maps Embed</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> Mobile Optimization</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> All 8 Service Pages</li>
+        <li><span class="inv-chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span> Professional UI/UX Design</li>
       </ul>
     </div>
 
@@ -891,14 +576,14 @@
       <span class="mnt-badge">INCLUDED</span>
       <h4 class="mnt-title">FREE Maintenance for 1 Full Year</h4>
       <ul class="mnt-list">
-        <li><span>•</span> Content Updates</li>
-        <li><span>•</span> Uploading New Images</li>
-        <li><span>•</span> Minor Improvements</li>
-        <li><span>•</span> Technical Support</li>
-        <li><span>•</span> Service Page Edits</li>
-        <li><span>•</span> Performance Monitoring</li>
+        <li><span>&#8226;</span> Content Updates</li>
+        <li><span>&#8226;</span> Uploading New Images</li>
+        <li><span>&#8226;</span> Minor Improvements</li>
+        <li><span>&#8226;</span> Technical Support</li>
+        <li><span>&#8226;</span> Service Page Edits</li>
+        <li><span>&#8226;</span> Performance Monitoring</li>
       </ul>
-      <p class="mnt-note">* After the first year, maintenance can be discussed as needed.</p>
+      <p class="mnt-note">&#42; After the first year, maintenance can be discussed as needed.</p>
     </div>
 
     <div class="dev">
@@ -916,8 +601,8 @@
 
     <div class="pf">
       <div class="pf-left">
-        <span class="pf-co">© 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
-        <span class="pf-ct">0901 888 8143 · 66 Ogunlana Drive, Surulere, Lagos</span>
+        <span class="pf-co">&#169; 2026 Touchstone Diagnostics Ltd. All rights reserved</span>
+        <span class="pf-ct">0901 888 8143 &middot; 66 Ogunlana Drive, Surulere, Lagos</span>
       </div>
       <span class="pf-pg">Page 6</span>
     </div>
@@ -925,31 +610,6 @@
 
 </div>
 
-<script>
-  function copyCode() {
-    var html = document.documentElement.outerHTML;
-    navigator.clipboard.writeText(html).then(function() {
-      var btn = document.getElementById('copy-btn');
-      var lbl = document.getElementById('btn-label');
-      btn.classList.add('copied');
-      lbl.textContent = 'Copied!';
-      setTimeout(function() {
-        btn.classList.remove('copied');
-        lbl.textContent = 'Copy Code';
-      }, 2500);
-    }).catch(function() {
-      var ta = document.createElement('textarea');
-      ta.value = document.documentElement.outerHTML;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      var lbl = document.getElementById('btn-label');
-      lbl.textContent = 'Copied!';
-      setTimeout(function() { lbl.textContent = 'Copy Code'; }, 2500);
-    });
-  }
-</script>
 
-
-</body></html>
+</body>
+</html>
